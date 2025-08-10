@@ -40,15 +40,20 @@ jobs:
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
       # ---- Frontend build (Vite @ root → dist/) ----
-      - name: Setup Node
+      - name: Setup Node (npm cache with lockfile)
         uses: actions/setup-node@v4
         with:
           node-version: 18
           cache: npm
+          cache-dependency-path: package-lock.json  # 루트 lockfile 기반 캐시
 
-      - name: Install & Build frontend (Vite)
+      - name: Ensure lockfile exists
         run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          test -f package-lock.json || (echo "❌ package-lock.json not found. Commit it first." && exit 1)
+
+      - name: Install & Build frontend (Vite, npm ci)
+        run: |
+          npm ci
           npm run build
           echo "---- dist tree ----"
           ls -la dist
@@ -76,11 +81,11 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key_path: key.pem
-          source: dist/**                 # ✅ 루트 dist
+          source: dist/**
           target: /home/${{ secrets.EC2_USER }}/upload/frontend
           overwrite: true
 
-      # ---- Activate frontend & deploy backend (blue/green by script) ----
+      # ---- Activate frontend & deploy backend ----
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
