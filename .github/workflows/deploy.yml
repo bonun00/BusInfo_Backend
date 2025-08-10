@@ -5,7 +5,6 @@ on:
     branches: [ main ]
   workflow_dispatch: {}
 
-# 동시 실행 방지 (같은 브랜치에서 이전 실행 취소)
 concurrency:
   group: cicd-${{ github.ref }}
   cancel-in-progress: true
@@ -17,11 +16,9 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      # ---------- Backend (Spring Boot) ----------
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -45,63 +42,16 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # ---------- Frontend (Vite at repo root → dist/) ----------
-      - name: Setup Node (use npm cache w/ lockfile)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Ensure lockfile exists
-        run: |
-          test -f package-lock.json || (echo "❌ package-lock.json not found. Commit it first." && exit 1)
-
-      - name: Install & Build frontend (npm ci)
-        run: |
-          npm ci
-          npm run build
-          echo "---- dist tree ----"
-          ls -la dist
-
-      # ---------- SSH key (safer: key_path) ----------
       - name: Write SSH key
         run: |
           echo "${{ secrets.EC2_KEY }}" > key.pem
           chmod 600 key.pem
 
-      # ---------- Upload frontend bundle ----------
-      - name: Ensure remote upload dir
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key_path: key.pem
-          script: mkdir -p /home/${{ secrets.EC2_USER }}/upload/frontend
-
-      - name: Upload dist/ to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key_path: key.pem
-          source: dist/**
-          target: /home/${{ secrets.EC2_USER }}/upload/frontend
-          overwrite: true
-
-      # ---------- Switch frontend release & deploy backend on EC2 ----------
-      - name: Activate frontend & deploy backend
+      - name: Deploy backend on EC2 (blue/green is in script)
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key_path: key.pem
           script: |
-            set -e
-            RELEASE_ID=$(date +%Y%m%d%H%M%S)
-            sudo mkdir -p /var/www/bus/releases/${RELEASE_ID}
-            sudo cp -r /home/${{ secrets.EC2_USER }}/upload/frontend/* /var/www/bus/releases/${RELEASE_ID}/
-            sudo ln -sfn /var/www/bus/releases/${RELEASE_ID} /var/www/bus/current
-            ls -1dt /var/www/bus/releases/* | tail -n +6 | xargs -r sudo rm -rf
-            sudo nginx -t && sudo systemctl reload nginx
             bash ~/deploy_docker.sh "${IMAGE}"
