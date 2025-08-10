@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: BusTime_backend
+
+  cache:
+    type: redis
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+  cache.redis.time-to-live: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+public-api:
+  service-key: ${PUBLIC_API_SERVICE_KEY}

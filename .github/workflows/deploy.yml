@@ -1,0 +1,63 @@
+name: CI/CD via GHCR to EC2
+on:
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build (Gradle)
+        run: ./gradlew clean build -x test
+
+      - name: GHCR login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push image
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/bus-app:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      # 프론트 정적 파일 업로드 (Vite=dist, CRA=build 중 택1)
+      - name: Upload frontend
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: frontend/dist/**    # CRA면 frontend/build/**
+          target: /home/${{ secrets.EC2_USER }}/upload
+
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            RELEASE_ID=$(date +%Y%m%d%H%M%S)
+            sudo mkdir -p /var/www/bus/releases/${RELEASE_ID}
+            sudo cp -r ~/upload/frontend/dist/* /var/www/bus/releases/${RELEASE_ID}/ || sudo cp -r ~/upload/frontend/build/* /var/www/bus/releases/${RELEASE_ID}/
+            sudo ln -sfn /var/www/bus/releases/${RELEASE_ID} /var/www/bus/current
+            # 배포 스크립트 실행 (EC2에 미리 올려둔 것)
+            export GITHUB_USER=${{ github.actor }}
+            export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            bash ~/deploy_docker.sh "${IMAGE}"
