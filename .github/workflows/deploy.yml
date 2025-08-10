@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   workflow_dispatch: {}
 
+# 동시 실행 방지 (같은 브랜치에서 이전 실행 취소)
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -12,17 +17,18 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Backend build & image push ----
-      - name: JDK
+      # ---------- Backend (Spring Boot) ----------
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Build (Gradle)
+      - name: Build backend (Gradle)
         run: ./gradlew clean build -x test
 
       - name: GHCR login
@@ -32,50 +38,48 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push image
+      - name: Build & Push backend image
         run: |
           IMAGE="ghcr.io/${{ github.repository_owner }}/bus-app:${{ github.sha }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # ---- Frontend build (Vite @ root → dist/) ----
-      - name: Setup Node (npm cache with lockfile)
+      # ---------- Frontend (Vite at repo root → dist/) ----------
+      - name: Setup Node (use npm cache w/ lockfile)
         uses: actions/setup-node@v4
         with:
           node-version: 18
           cache: npm
-          cache-dependency-path: package-lock.json  # 루트 lockfile 기반 캐시
+          cache-dependency-path: package-lock.json
 
       - name: Ensure lockfile exists
         run: |
           test -f package-lock.json || (echo "❌ package-lock.json not found. Commit it first." && exit 1)
 
-      - name: Install & Build frontend (Vite, npm ci)
+      - name: Install & Build frontend (npm ci)
         run: |
           npm ci
           npm run build
           echo "---- dist tree ----"
           ls -la dist
 
-      # ---- SSH key as file (safer) ----
+      # ---------- SSH key (safer: key_path) ----------
       - name: Write SSH key
         run: |
           echo "${{ secrets.EC2_KEY }}" > key.pem
           chmod 600 key.pem
 
-      # 원격 업로드 폴더 보장
+      # ---------- Upload frontend bundle ----------
       - name: Ensure remote upload dir
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key_path: key.pem
-          script: |
-            mkdir -p /home/${{ secrets.EC2_USER }}/upload/frontend
+          script: mkdir -p /home/${{ secrets.EC2_USER }}/upload/frontend
 
-      # ---- Upload dist/ to EC2 ----
-      - name: Upload frontend (dist/)
+      - name: Upload dist/ to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -85,8 +89,8 @@ jobs:
           target: /home/${{ secrets.EC2_USER }}/upload/frontend
           overwrite: true
 
-      # ---- Activate frontend & deploy backend ----
-      - name: Deploy on EC2
+      # ---------- Switch frontend release & deploy backend on EC2 ----------
+      - name: Activate frontend & deploy backend
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
