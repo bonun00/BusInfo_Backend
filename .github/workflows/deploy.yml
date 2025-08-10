@@ -69,3 +69,4 @@ jobs:
           envs: IMAGE,GHCR_USER,GHCR_TOKEN
           script: |
             bash ~/deploy_docker.sh "${IMAGE}"
+            
