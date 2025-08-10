@@ -1,7 +1,10 @@
 name: CI/CD via GHCR to EC2
+
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: {}
+
 permissions:
   contents: read
   packages: write
@@ -12,6 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ---- Backend build & image push ----
       - name: JDK
         uses: actions/setup-java@v4
         with:
@@ -35,29 +39,60 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # 프론트 정적 파일 업로드 (Vite=dist, CRA=build 중 택1)
-      - name: Upload frontend
+      # ---- Frontend build (Vite @ root → dist/) ----
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install & Build frontend (Vite)
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+          echo "---- dist tree ----"
+          ls -la dist
+
+      # ---- SSH key as file (safer) ----
+      - name: Write SSH key
+        run: |
+          echo "${{ secrets.EC2_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      # 원격 업로드 폴더 보장
+      - name: Ensure remote upload dir
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key_path: key.pem
+          script: |
+            mkdir -p /home/${{ secrets.EC2_USER }}/upload/frontend
+
+      # ---- Upload dist/ to EC2 ----
+      - name: Upload frontend (dist/)
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          source: frontend/dist/**    # CRA면 frontend/build/**
-          target: /home/${{ secrets.EC2_USER }}/upload
+          key_path: key.pem
+          source: dist/**                 # ✅ 루트 dist
+          target: /home/${{ secrets.EC2_USER }}/upload/frontend
+          overwrite: true
 
+      # ---- Activate frontend & deploy backend (blue/green by script) ----
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
+          key_path: key.pem
           script: |
             set -e
             RELEASE_ID=$(date +%Y%m%d%H%M%S)
             sudo mkdir -p /var/www/bus/releases/${RELEASE_ID}
-            sudo cp -r ~/upload/frontend/dist/* /var/www/bus/releases/${RELEASE_ID}/ || sudo cp -r ~/upload/frontend/build/* /var/www/bus/releases/${RELEASE_ID}/
+            sudo cp -r /home/${{ secrets.EC2_USER }}/upload/frontend/* /var/www/bus/releases/${RELEASE_ID}/
             sudo ln -sfn /var/www/bus/releases/${RELEASE_ID} /var/www/bus/current
-            # 배포 스크립트 실행 (EC2에 미리 올려둔 것)
-            export GITHUB_USER=${{ github.actor }}
-            export GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            ls -1dt /var/www/bus/releases/* | tail -n +6 | xargs -r sudo rm -rf
+            sudo nginx -t && sudo systemctl reload nginx
             bash ~/deploy_docker.sh "${IMAGE}"
