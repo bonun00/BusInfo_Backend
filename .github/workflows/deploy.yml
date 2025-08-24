@@ -17,8 +17,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      GHCR_USER: ${{ secrets.GHCR_USER }}     # PAT owner
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}   # read:packages 권한 필수
+      GHCR_USER: ${{ secrets.GHCR_USER }}     # EC2에서 ghcr 로그인할 계정 (owner)
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}   # read:packages 권한의 PAT
     steps:
       - uses: actions/checkout@v4
 
@@ -32,8 +32,8 @@ jobs:
       - name: Build backend (Gradle)
         run: ./gradlew clean build -x test
 
-      # Push image to GHCR (빌드/푸시 후 IMAGE를 GITHUB_ENV로 노출)
-      - name: GHCR login
+      # Push image to GHCR
+      - name: GHCR login (CI)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -47,7 +47,7 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # (선택) 키 파일로 쓰고 싶으면 사용, 아니면 바로 'key:'에 시크릿 넣어도 됨
+      # SSH 키 파일 작성(또는 with.key에 바로 secrets 사용해도 됨)
       - name: Write SSH key
         run: |
           echo "${{ secrets.EC2_KEY }}" > key.pem
@@ -58,14 +58,13 @@ jobs:
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ${{ secrets.EC2_USER }}      # 예: ubuntu
           key_path: key.pem
           port: 22
           timeout: 1m
           command_timeout: 15m
           script_stop: true
           debug: true
-          # 원격에 전달할 환경변수
           envs: IMAGE,GHCR_USER,GHCR_TOKEN
           script: |
             echo "IMAGE=$IMAGE"
