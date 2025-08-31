@@ -98,7 +98,7 @@ public class StopTimeClient {
             item.path("routeno").asText(),
             item.path("routetp").asText(),
             item.path("vehicletp").asText(),
-            item.path("arrtime").asInt() / 60,
+            item.path("arrtime").asInt(),
             item.path("arrprevstationcnt").asInt()
         );
     }
