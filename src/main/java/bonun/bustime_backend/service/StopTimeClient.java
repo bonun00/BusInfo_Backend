@@ -15,6 +15,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -91,6 +92,9 @@ public class StopTimeClient {
     }
 
     private ArrivalInfo parseArrivalInfo(JsonNode item) {
+        int arrTime = item.path("arrtime").asInt();
+        long expireAt = System.currentTimeMillis() + (Math.max(0, arrTime) * 1000L);
+
         return new ArrivalInfo(
             item.path("nodeid").asText(),
             item.path("nodenm").asText(),
@@ -98,8 +102,9 @@ public class StopTimeClient {
             item.path("routeno").asText(),
             item.path("routetp").asText(),
             item.path("vehicletp").asText(),
-            item.path("arrtime").asInt(),
-            item.path("arrprevstationcnt").asInt()
+            arrTime,
+            item.path("arrprevstationcnt").asInt(),
+            expireAt
         );
     }
 }
