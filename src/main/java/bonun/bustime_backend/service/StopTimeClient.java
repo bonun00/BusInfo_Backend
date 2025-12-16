@@ -15,7 +15,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -33,7 +32,25 @@ public class StopTimeClient {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    private static final Duration TTL = Duration.ofSeconds(60);
+    private Duration computeTtlSeconds(int minArrTimeSec) {
+
+        if (minArrTimeSec <= 0 || minArrTimeSec == Integer.MAX_VALUE) {
+            return Duration.ofSeconds(60);
+        }
+
+        int ttl;
+        if (minArrTimeSec <= 60) {
+            ttl = 10;
+        } else if (minArrTimeSec <= 180) {
+            ttl = 30;
+        } else if (minArrTimeSec <= 600) {
+            ttl = 60;
+        } else {
+            ttl = 180;
+        }
+
+        return Duration.ofSeconds(ttl);
+    }
 
     public List<ArrivalInfo> getArrivalInfoByNodeId(String nodeId) {
         String redisKey = "arrivalInfo:" + nodeId;
@@ -48,7 +65,7 @@ public class StopTimeClient {
 
         try {
             URI uri = UriComponentsBuilder
-                .fromHttpUrl("https://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList")
+                .fromUriString("https://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList")
                 .queryParam("serviceKey", serviceKey)
                 .queryParam("pageNo", 1)
                 .queryParam("numOfRows", 100)
@@ -65,23 +82,43 @@ public class StopTimeClient {
                 .path("response").path("body").path("items").path("item");
 
             List<ArrivalInfo> result = new ArrayList<>();
+            int minArrTimeSec = Integer.MAX_VALUE;
+            int minPrevStationCnt = Integer.MAX_VALUE;
 
             if (itemsNode.isArray()) {
                 for (JsonNode item : itemsNode) {
                     String routeno = item.path("routeno").asText();
                     if (routeno.startsWith("113") || routeno.startsWith("250")) {
+                        int arrTimeSec = item.path("arrtime").asInt(Integer.MAX_VALUE);
+                        int prevCnt = item.path("arrprevstationcnt").asInt(Integer.MAX_VALUE);
+                        if (arrTimeSec > 0) {
+                            minArrTimeSec = Math.min(minArrTimeSec, arrTimeSec);
+                        }
+                        if (prevCnt > 0) {
+                            minPrevStationCnt = Math.min(minPrevStationCnt, prevCnt);
+                        }
                         result.add(parseArrivalInfo(item));
                     }
                 }
             } else if (itemsNode.isObject()) {
                 String routeno = itemsNode.path("routeno").asText();
                 if (routeno.startsWith("113") || routeno.startsWith("250")) {
+                    int arrTimeSec = itemsNode.path("arrtime").asInt(Integer.MAX_VALUE);
+                    int prevCnt = itemsNode.path("arrprevstationcnt").asInt(Integer.MAX_VALUE);
+                    if (arrTimeSec > 0) {
+                        minArrTimeSec = Math.min(minArrTimeSec, arrTimeSec);
+                    }
+                    if (prevCnt > 0) {
+                        minPrevStationCnt = Math.min(minPrevStationCnt, prevCnt);
+                    }
                     result.add(parseArrivalInfo(itemsNode));
                 }
             }
 
-            log.info(" API 조회 후 Redis에 저장: {}", redisKey);
-            redisTemplate.opsForValue().set(redisKey, result, TTL);
+            Duration ttl = computeTtlSeconds(minArrTimeSec);
+            log.info("API 조회 후 Redis에 저장: {} (ttl={}s, minArrTime={}s, minPrevStationCnt={})",
+                redisKey, ttl.getSeconds(), minArrTimeSec, minPrevStationCnt);
+            redisTemplate.opsForValue().set(redisKey, result, ttl);
 
             return result;
 
