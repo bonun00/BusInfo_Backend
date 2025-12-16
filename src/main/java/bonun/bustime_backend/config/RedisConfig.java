@@ -22,7 +22,6 @@ public class RedisConfig {
         RedisStandaloneConfiguration conf = new RedisStandaloneConfiguration();
         conf.setHostName(host);
         conf.setPort(port);
-        // If Redis is protected with `requirepass`, authenticate as the default user
         if (password != null && !password.isBlank()) {
             conf.setUsername("default");
             conf.setPassword(RedisPassword.of(password));
