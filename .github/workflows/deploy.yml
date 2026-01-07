@@ -17,12 +17,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      GHCR_USER: ${{ secrets.GHCR_USER }}     # EC2에서 ghcr 로그인할 계정 (owner)
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}   # read:packages 권한의 PAT
+      GHCR_USER: ${{ secrets.GHCR_USER }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      # Backend build
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -32,7 +31,6 @@ jobs:
       - name: Build backend (Gradle)
         run: ./gradlew clean build -x test
 
-      # Push image to GHCR
       - name: GHCR login (CI)
         uses: docker/login-action@v3
         with:
@@ -47,18 +45,18 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-      # SSH 키 파일 작성(또는 with.key에 바로 secrets 사용해도 됨)
+
       - name: Write SSH key
         run: |
           echo "${{ secrets.EC2_KEY }}" > key.pem
           chmod 600 key.pem
 
-      # EC2 배포
+
       - name: Deploy backend on EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}      # 예: ubuntu
+          username: ${{ secrets.EC2_USER }}
           key_path: key.pem
           port: 22
           timeout: 1m
