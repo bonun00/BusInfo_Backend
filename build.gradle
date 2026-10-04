@@ -4,6 +4,9 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
+// Spring AOT(JVM 모드): 빌드 시 Bean 정의·조건 평가를 미리 계산해 bootJar에 포함
+apply plugin: 'org.springframework.boot.aot'
+
 group = 'bonun'
 version = '0.0.1-SNAPSHOT'
 

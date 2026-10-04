@@ -30,7 +30,7 @@ RUN addgroup -S app && adduser -S app -G app
 ENV SPRING_PROFILES_ACTIVE=prod \
     SPRING_DATA_REDIS_HOST=redis \
     SPRING_DATA_REDIS_PORT=6379 \
-    JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
+    JAVA_TOOL_OPTIONS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75 -XX:+UseSerialGC -Dspring.aot.enabled=true"
 
 # fat jar → 일반 jar 구조로 풀기 (CDS는 nested jar를 지원하지 않음)
 COPY --from=build /workspace/app.jar /tmp/app.jar
