@@ -25,3 +25,84 @@ management:
 
 public-api:
   service-key: ${public-api.service-key}
+
+bus:
+  scheduler:
+    # 배포 후 Render 환경변수 BUS_SCHEDULER_ENABLED=true 로 켠다 (실행 중에 확인하므로 재배포 불필요)
+    enabled: false
+    tick: PT5S              # 조회할 차례인 정류장을 고르는 주기
+    initial-delay: PT30S
+    poll-interval: 60s      # 정류장별 조회 주기 (측정한 갱신 간격 중앙값 122초의 절반)
+    max-calls-per-tick: 6   # 64개를 60초 안에 돌려면 tick(5초)당 6개
+    zone: Asia/Seoul
+    active-from: "06:00"
+    active-to: "23:00"
+    daily-call-limit: 400000  # 한도 50만 회의 80%
+    arrival-station-count: 2  # 이 정류장 수 이하에서 사라지면 도착으로 판단
+    cache-ttl: 300s
+  stops:
+    - { name: "창 원 T/R", node-id: TSB390000116 }
+    - { name: "마산T/R (합성동)", node-id: TSB417000102 }
+    - { name: "마산역", node-id: TSB417000032 }
+    - { name: "북성초", node-id: TSB417000024 }
+    - { name: "남마산 T/R", node-id: TSB416000083 }
+    - { name: "경남대", node-id: TSB416000054 }
+    - { name: "마산 합포 구청", node-id: TSB416000067 }
+    - { name: "어시장", node-id: TSB416000071 }
+    - { name: "회산교 (북마산시장)", node-id: TSB416000081 }
+    - { name: "교도소 입구", node-id: TSB417000046 }
+    - { name: "중리", node-id: TSB417000060 }
+    - { name: "GS 자이", node-id: TSB390000377 }
+    - { name: "오곡", node-id: TSB390000338 }
+    - { name: "수정 그린", node-id: TSB390000770 }
+    - { name: "무기 (대동A)", node-id: TSB390000311 }
+    - { name: "칠원", node-id: TSB390000367 }
+    - { name: "유원", node-id: TSB390000332 }
+    - { name: "기공A", node-id: TSB390000424 }
+    - { name: "칠북", node-id: TSB390000434 }
+    - { name: "칠서", node-id: TSB390000413 }
+    - { name: "대산", node-id: TSB390000519 }
+    - { name: "구포", node-id: TSB390000304 }
+    - { name: "운곡", node-id: TSB390000440 }
+    - { name: "산정", node-id: TSB390000309 }
+    - { name: "사촌", node-id: TSB390000289 }
+    - { name: "계내", node-id: TSB390000480 }
+    - { name: "신계", node-id: TSB390000409 }
+    - { name: "이령", node-id: TSB390000463 }
+    - { name: "검단", node-id: TSB390000059 }
+    - { name: "에이스A", node-id: TSB390000423 }
+    - { name: "대산", node-id: TSB390000520 }
+    - { name: "로봇고", node-id: TSB390000516 }
+    - { name: "기공A", node-id: TSB390000425 }
+    - { name: "에이스A", node-id: TSB390000823 }
+    - { name: "호곡", node-id: TSB390000343 }
+    - { name: "서촌", node-id: TSB390000535 }
+    - { name: "장암", node-id: TSB390000336 }
+    - { name: "내봉촌", node-id: TSB390000107 }
+    - { name: "남양", node-id: TSB390000061 }
+    - { name: "두곡", node-id: TSB390000303 }
+    - { name: "청계 (칠서면)", node-id: TSB390000295 }
+    - { name: "칠북", node-id: TSB390000433 }
+    - { name: "남지", node-id: TSB391000635 }
+    - { name: "장포", node-id: TSB390000498 }
+    - { name: "동촌", node-id: TSB390000243 }
+    - { name: "이룡농협", node-id: TSB390000476 }
+    - { name: "이룡", node-id: TSB390000476 }
+    - { name: "득소", node-id: TSB389000383 }
+    - { name: "신계", node-id: TSB390000408 }
+    - { name: "칠서 공단", node-id: TSB390000293 }
+    - { name: "운곡", node-id: TSB390000441 }
+    - { name: "검단", node-id: TSB390000058 }
+    - { name: "유원", node-id: TSB390000331 }
+    - { name: "오곡", node-id: TSB390000339 }
+    - { name: "칠원", node-id: TSB390000328 }
+    - { name: "무기 (대동A)", node-id: TSB390000310 }
+    - { name: "수정 그린", node-id: TSB390000314 }
+    - { name: "GS 자이", node-id: TSB390000319 }
+    - { name: "중리", node-id: TSB417000061 }
+    - { name: "교도소 입구", node-id: TSB417000047 }
+    - { name: "북성 초교", node-id: TSB417000023 }
+    - { name: "북성 초교", node-id: TSB417000044 }
+    - { name: "회산교 (북마산 시장)", node-id: TSB417000009 }
+    - { name: "어시장", node-id: TSB417000072 }
+    - { name: "산정", node-id: TSB390000851 }

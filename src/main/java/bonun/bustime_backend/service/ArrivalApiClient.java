@@ -25,17 +25,20 @@ public class ArrivalApiClient {
 
 	private final RestTemplate restTemplate;
 	private final ObjectMapper objectMapper;
+	private final DailyCallCounter callCounter;
 	private final String serviceKey;
 	private final String baseUrl;
 
 	public ArrivalApiClient(
 		RestTemplate restTemplate,
 		ObjectMapper objectMapper,
+		DailyCallCounter callCounter,
 		@Value("${public-api.service-key}") String serviceKey,
 		@Value("${public-api.base-url:https://apis.data.go.kr/1613000/ArvlInfoInqireService}") String baseUrl
 	) {
 		this.restTemplate = restTemplate;
 		this.objectMapper = objectMapper;
+		this.callCounter = callCounter;
 		this.serviceKey = serviceKey;
 		this.baseUrl = baseUrl;
 	}
@@ -54,6 +57,7 @@ public class ArrivalApiClient {
 			.toUri();
 
 		log.info("외부 API 요청: nodeId={}", nodeId);
+		callCounter.increment();
 		return parse(restTemplate.getForObject(uri, String.class));
 	}
 

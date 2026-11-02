@@ -12,7 +12,8 @@ import bonun.bustime_backend.dto.ArrivalItem;
 
 class ArrivalApiClientTest {
 
-	private final ArrivalApiClient client = new ArrivalApiClient(null, new ObjectMapper(), "key", "http://localhost");
+	private final ArrivalApiClient client = new ArrivalApiClient(null, new ObjectMapper(), null, "key",
+		"http://localhost");
 
 	private static String response(String items) {
 		return "{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":" + items + "}}}";

@@ -1,24 +1,39 @@
 package bonun.bustime_backend.service;
 
+import bonun.bustime_backend.config.BusProperties;
 import bonun.bustime_backend.dto.ArrivalInfo;
 import bonun.bustime_backend.dto.ArrivalItem;
+import bonun.bustime_backend.service.ArrivalEstimator.Estimate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RequiredArgsConstructor
 @Service
 @Slf4j
 public class StopTimeClient {
 
+    public enum RefreshResult {
+        CHANGED, UNCHANGED, FAILED
+    }
+
     private final ArrivalApiClient apiClient;
     private final ArrivalCacheStore cacheStore;
+    private final ArrivalEstimator estimator;
+    private final BusProperties properties;
+    private final Clock clock;
+
+    // 정류장별 마지막 Redis 저장 시각 (값이 그대로여도 TTL 절반이 지나면 다시 저장하기 위해)
+    private final Map<String, Instant> lastWrittenAt = new ConcurrentHashMap<>();
 
     static Duration computeTtlSeconds(int minArrTimeSec) {
 
@@ -48,10 +63,11 @@ public class StopTimeClient {
         }
 
         try {
+            Instant now = clock.instant();
             List<ArrivalItem> items = apiClient.fetch(nodeId);
-            long now = System.currentTimeMillis();
+            Estimate estimate = estimator.estimate(nodeId, items, now);
+            logChanges(nodeId, estimate);
 
-            List<ArrivalInfo> result = new ArrayList<>();
             int minArrTimeSec = Integer.MAX_VALUE;
             int minPrevStationCnt = Integer.MAX_VALUE;
             for (ArrivalItem item : items) {
@@ -61,19 +77,55 @@ public class StopTimeClient {
                 if (item.arrPrevStationCnt() > 0) {
                     minPrevStationCnt = Math.min(minPrevStationCnt, item.arrPrevStationCnt());
                 }
-                result.add(item.toArrivalInfo(now + Math.max(0, item.arrTime()) * 1000L));
             }
 
-            Duration ttl = computeTtlSeconds(minArrTimeSec);
+            // 스케줄러가 갱신 중인 정류장은 스케줄러와 같은 TTL을 쓴다
+            Duration ttl = isScheduled(nodeId) ? properties.scheduler().cacheTtl() : computeTtlSeconds(minArrTimeSec);
             log.info("API 조회 후 Redis에 저장: arrivalInfo:{} (ttl={}s, minArrTime={}s, minPrevStationCnt={})",
                 nodeId, ttl.getSeconds(), minArrTimeSec, minPrevStationCnt);
-            cacheStore.put(nodeId, result, ttl);
+            if (cacheStore.put(nodeId, estimate.arrivals(), ttl)) {
+                lastWrittenAt.put(nodeId, now);
+            }
 
-            return result;
+            return estimate.arrivals();
 
         } catch (Exception e) {
             log.error("API 호출 실패 - nodeId={}", nodeId, e);
             return Collections.emptyList();
+        }
+    }
+
+    // 스케줄러가 호출한다. 값이 바뀌었거나 마지막 저장 후 TTL 절반이 지났을 때만 Redis에 쓴다.
+    public RefreshResult refreshScheduled(String nodeId) {
+        try {
+            Instant now = clock.instant();
+            Estimate estimate = estimator.estimate(nodeId, apiClient.fetch(nodeId), now);
+            logChanges(nodeId, estimate);
+
+            Duration ttl = properties.scheduler().cacheTtl();
+            Instant written = lastWrittenAt.get(nodeId);
+            boolean expiring = written == null || Duration.between(written, now).compareTo(ttl.dividedBy(2)) >= 0;
+            if ((estimate.changed() || expiring) && cacheStore.put(nodeId, estimate.arrivals(), ttl)) {
+                lastWrittenAt.put(nodeId, now);
+            }
+            return estimate.changed() ? RefreshResult.CHANGED : RefreshResult.UNCHANGED;
+
+        } catch (Exception e) {
+            log.warn("스케줄러 갱신 실패 - nodeId={}: {}", nodeId, e.toString());
+            return RefreshResult.FAILED;
+        }
+    }
+
+    private boolean isScheduled(String nodeId) {
+        return properties.scheduler().isActive(clock) && properties.nodeIds().contains(nodeId);
+    }
+
+    // 나중에 실제 오차를 다시 계산할 수 있도록 변경을 감지했을 때만 남긴다
+    private void logChanges(String nodeId, Estimate estimate) {
+        for (ArrivalEstimator.Change change : estimate.changes()) {
+            log.info("도착 정보 변경: nodeId={} route={} type={} arrTime={}s stations={} prevPollAt={} changeAt={}",
+                nodeId, change.routeNo(), change.type(), change.arrTime(), change.arrPrevStationCnt(),
+                estimate.previousPollAt(), estimate.changeAt());
         }
     }
 }
