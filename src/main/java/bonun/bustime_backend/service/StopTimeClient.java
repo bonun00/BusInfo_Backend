@@ -27,10 +27,12 @@ public class StopTimeClient {
     @Value("${public-api.service-key}")
     private String serviceKey;
 
+    @Value("${public-api.base-url:https://apis.data.go.kr/1613000/ArvlInfoInqireService}")
+    private String baseUrl;
+
     private final ObjectMapper objectMapper;
     private final RedisTemplate<String, Object> redisTemplate;
-
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
     private Duration computeTtlSeconds(int minArrTimeSec) {
 
@@ -56,8 +58,14 @@ public class StopTimeClient {
         String redisKey = "arrivalInfo:" + nodeId;
 
 
-        Object cached = redisTemplate.opsForValue().get(redisKey);
-        if (cached != null && cached instanceof List<?>) {
+        Object cached = null;
+        try {
+            cached = redisTemplate.opsForValue().get(redisKey);
+        } catch (RuntimeException e) {
+            // Redis 장애나 역직렬화 실패는 캐시 miss로 처리
+            log.warn("Redis 조회 실패 - key={}: {}", redisKey, e.toString());
+        }
+        if (cached instanceof List<?>) {
             log.info("Redis 캐시에서 조회됨: {}", redisKey);
             return (List<ArrivalInfo>) cached;
         }
@@ -65,7 +73,7 @@ public class StopTimeClient {
 
         try {
             URI uri = UriComponentsBuilder
-                .fromUriString("https://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList")
+                .fromUriString(baseUrl + "/getSttnAcctoArvlPrearngeInfoList")
                 .queryParam("serviceKey", serviceKey)
                 .queryParam("pageNo", 1)
                 .queryParam("numOfRows", 100)
@@ -75,7 +83,7 @@ public class StopTimeClient {
                 .build(true)
                 .toUri();
 
-            log.info("외부 API 요청: {}", uri);
+            log.info("외부 API 요청: nodeId={}", nodeId);
             ResponseEntity<String> response = restTemplate.getForEntity(uri, String.class);
 
             JsonNode itemsNode = objectMapper.readTree(response.getBody())
