@@ -1,5 +1,6 @@
 package bonun.bustime_backend.service;
 
+import bonun.bustime_backend.alert.RefreshHealthMonitor;
 import bonun.bustime_backend.config.BusProperties;
 import bonun.bustime_backend.dto.ArrivalInfo;
 import bonun.bustime_backend.dto.ArrivalItem;
@@ -31,6 +32,7 @@ public class StopTimeClient {
     private final ArrivalEstimator estimator;
     private final BusProperties properties;
     private final Clock clock;
+    private final RefreshHealthMonitor healthMonitor;
 
     // 정류장별 마지막 Redis 저장 시각 (값이 그대로여도 TTL 절반이 지나면 다시 저장하기 위해)
     private final Map<String, Instant> lastWrittenAt = new ConcurrentHashMap<>();
@@ -100,6 +102,7 @@ public class StopTimeClient {
         try {
             Instant now = clock.instant();
             Estimate estimate = estimator.estimate(nodeId, apiClient.fetch(nodeId), now);
+            healthMonitor.recordSuccess();
             logChanges(nodeId, estimate);
 
             Duration ttl = properties.scheduler().cacheTtl();
@@ -112,6 +115,7 @@ public class StopTimeClient {
 
         } catch (Exception e) {
             log.warn("스케줄러 갱신 실패 - nodeId={}: {}", nodeId, e.toString());
+            healthMonitor.recordFailure(nodeId, e);
             return RefreshResult.FAILED;
         }
     }

@@ -17,6 +17,8 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import bonun.bustime_backend.alert.Notifier;
+import bonun.bustime_backend.alert.RefreshHealthMonitor;
 import bonun.bustime_backend.config.BusProperties;
 import bonun.bustime_backend.service.StopTimeClient.RefreshResult;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,8 @@ public class ArrivalRefreshScheduler {
 	private final BusProperties properties;
 	private final Clock clock;
 	private final ExecutorService arrivalRefreshExecutor;
+	private final RefreshHealthMonitor healthMonitor;
+	private final Notifier notifier;
 
 	private final Map<String, Instant> nextPollAt = new ConcurrentHashMap<>();
 
@@ -54,11 +58,14 @@ public class ArrivalRefreshScheduler {
 	public void tick() {
 		BusProperties.Scheduler config = properties.scheduler();
 		if (!config.isActive(clock)) {
+			healthMonitor.pause();
 			return;
 		}
+		healthMonitor.resume();
 		if (callCounter.limitReached(config.dailyCallLimit())) {
 			if (!limitWarned) {
 				log.warn("공공 API 일일 호출 수가 {}회에 도달해 스케줄러를 멈춥니다", config.dailyCallLimit());
+				notifier.send("🚨 [BuStory] 공공 API 일일 호출 수가 " + config.dailyCallLimit() + "회에 도달해 스케줄러를 멈췄습니다");
 				limitWarned = true;
 			}
 			return;
@@ -84,12 +91,14 @@ public class ArrivalRefreshScheduler {
 			} catch (TimeoutException | ExecutionException e) {
 				futures.get(k).cancel(true);
 				failed++;
+				healthMonitor.recordFailure(due.get(k), e);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				return;
 			}
 		}
 
+		healthMonitor.evaluate();
 		logSummaryIfDue(now);
 	}
 

@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import bonun.bustime_backend.alert.Notifier;
+import bonun.bustime_backend.alert.RefreshHealthMonitor;
 import bonun.bustime_backend.config.BusProperties;
 import bonun.bustime_backend.service.StopTimeClient.RefreshResult;
 
@@ -52,7 +54,7 @@ class ArrivalRefreshSchedulerTest {
 		BusProperties.Scheduler config = new BusProperties.Scheduler(enabled, Duration.ofSeconds(60), 6,
 			"Asia/Seoul", "06:00", "23:00", 400_000, 2, Duration.ofSeconds(300));
 		return new ArrivalRefreshScheduler(stopTimeClient, callCounter, new BusProperties(config, stops), clock,
-			executor);
+			executor, mock(RefreshHealthMonitor.class), mock(Notifier.class));
 	}
 
 	@Test
