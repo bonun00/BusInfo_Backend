@@ -62,8 +62,26 @@ public class ArrivalApiClient {
 	}
 
 	List<ArrivalItem> parse(String body) throws JsonProcessingException {
-		JsonNode itemsNode = objectMapper.readTree(body)
-			.path("response").path("body").path("items").path("item");
+		if (body == null || body.isBlank()) {
+			throw new PublicApiException("EMPTY", "빈 응답");
+		}
+		// 공공데이터포털 에러는 _type=json이어도 XML로만 온다
+		String trimmed = body.stripLeading();
+		if (trimmed.startsWith("<")) {
+			throw new PublicApiException(
+				between(trimmed, "<returnReasonCode>", "</returnReasonCode>"),
+				between(trimmed, "<returnAuthMsg>", "</returnAuthMsg>"));
+		}
+
+		JsonNode response = objectMapper.readTree(body).path("response");
+		// 제공기관 에러는 정상 JSON 구조에 resultCode로 온다 (00이 정상)
+		JsonNode header = response.path("header");
+		String resultCode = header.path("resultCode").asText();
+		if (!"00".equals(resultCode)) {
+			throw new PublicApiException(resultCode, header.path("resultMsg").asText());
+		}
+
+		JsonNode itemsNode = response.path("body").path("items").path("item");
 
 		// 결과가 한 건이면 배열이 아니라 객체로, 없으면 빈 문자열로 온다
 		List<JsonNode> nodes = new ArrayList<>();
@@ -90,5 +108,15 @@ public class ArrivalApiClient {
 			}
 		}
 		return items;
+	}
+
+	private static String between(String text, String start, String end) {
+		int from = text.indexOf(start);
+		if (from < 0) {
+			return "UNKNOWN";
+		}
+		from += start.length();
+		int to = text.indexOf(end, from);
+		return to < 0 ? "UNKNOWN" : text.substring(from, to).trim();
 	}
 }

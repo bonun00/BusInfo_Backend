@@ -1,6 +1,7 @@
 package bonun.bustime_backend.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
@@ -49,5 +50,35 @@ class ArrivalApiClientTest {
 	@Test
 	void 결과가_없으면_빈_목록을_돌려준다() throws Exception {
 		assertThat(client.parse(response("\"\""))).isEmpty();
+	}
+
+	@Test
+	void 제공기관_에러코드면_예외를_던진다() {
+		String body = "{\"response\":{\"header\":{\"resultCode\":\"99\","
+			+ "\"resultMsg\":\"INVALID_REQUEST_PARAMETER_ERROR\"}}}";
+
+		assertThatThrownBy(() -> client.parse(body))
+			.isInstanceOf(PublicApiException.class)
+			.satisfies(e -> assertThat(((PublicApiException) e).isFatal()).isFalse());
+	}
+
+	@Test
+	void 포털_에러는_XML로_와도_코드를_읽어_예외를_던진다() {
+		String body = "<OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE ERROR</errMsg>"
+			+ "<returnAuthMsg>LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR</returnAuthMsg>"
+			+ "<returnReasonCode>22</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>";
+
+		assertThatThrownBy(() -> client.parse(body))
+			.isInstanceOf(PublicApiException.class)
+			.satisfies(e -> {
+				PublicApiException ex = (PublicApiException) e;
+				assertThat(ex.code()).isEqualTo("22");
+				assertThat(ex.isFatal()).isTrue();
+			});
+	}
+
+	@Test
+	void 빈_응답이면_예외를_던진다() {
+		assertThatThrownBy(() -> client.parse("")).isInstanceOf(PublicApiException.class);
 	}
 }
